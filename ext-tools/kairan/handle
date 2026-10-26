@@ -7,11 +7,16 @@ set -euo pipefail
 #   回覧 <text>  | post <text>   put up a notice; replies with its number
 #   一覧         | list          open notices and who has seen each
 #   見た <n>     | seen <n>      stamp notice <n> as seen by the sender
-#   おわり <n>   | close <n>     take notice <n> down (only whoever posted it)
+#   おわり <n>   | close <n>     take notice <n> down and archive it, with its
+#                                stamps (only whoever posted it)
+#   過去         | archive       closed notices, newest first (the latest 10)
 #
 # Replies are in Japanese for the Japanese words and in English for the
 # English ones. Notices live in one JSON file next to the member's config
-# (<config>.kairan.json), so each member in each team has its own board.
+# (<config>.kairan.json), so each member in each team has its own board:
+# {"next": <n>, "items": [open...], "archived": [closed...]}. A board written
+# before archiving existed has no "archived" key; it is read as empty. Numbers
+# come from "next" and are never reused.
 
 command -v jq >/dev/null 2>&1 || { echo "jq is not installed" >&2; exit 1; }
 
@@ -62,7 +67,7 @@ arg="$(printf '%s' "${trimmed#"$cmd"}" | sed -e 's/^[[:space:]]*//')"
 lc_cmd="$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')"
 
 case "$lc_cmd" in
-  回覧|一覧|見た|おわり) lang=ja ;;
+  回覧|一覧|見た|おわり|過去) lang=ja ;;
   *) lang=en ;;
 esac
 
@@ -71,8 +76,8 @@ say() {  # <ja> <en>
 }
 
 usage() {
-  say "使い方: 「回覧 <本文>」で回覧を出す / 「一覧」で出ている回覧 / 「見た <番号>」で確認印 / 「おわり <番号>」で自分の回覧を閉じる" \
-      "Usage: \"post <text>\" puts up a notice / \"list\" shows open notices / \"seen <n>\" stamps one as seen / \"close <n>\" takes down your own"
+  say "使い方: 「回覧 <本文>」で回覧を出す / 「一覧」で出ている回覧 / 「見た <番号>」で確認印 / 「おわり <番号>」で自分の回覧を閉じる / 「過去」で閉じた回覧" \
+      "Usage: \"post <text>\" puts up a notice / \"list\" shows open notices / \"seen <n>\" stamps one as seen / \"close <n>\" takes down your own / \"archive\" shows closed ones"
 }
 
 # A notice number, or a usage reply.
@@ -129,8 +134,27 @@ case "$lc_cmd" in
       exit 0
     fi
     seen="$(jq -r --argjson n "$arg" '.items[] | select(.id == $n) | if (.seen | length) == 0 then "" else (.seen | join(", ")) end' "$board")"
-    save "$(jq --argjson n "$arg" '.items |= map(select(.id != $n))' "$board")"
-    say "回覧 ${arg} を閉じました。確認印: ${seen:-なし}" "Closed notice ${arg}. Seen by: ${seen:-no one}"
+    now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    save "$(jq --argjson n "$arg" --arg t "$now" \
+      '.archived = ((.archived // []) + [.items[] | select(.id == $n) | .closed_at = $t]) | .items |= map(select(.id != $n))' "$board")"
+    say "回覧 ${arg} を閉じました(「過去」で見られます)。確認印: ${seen:-なし}" \
+        "Closed notice ${arg} (see it with \"archive\"). Seen by: ${seen:-no one}"
+    ;;
+  過去|archive)
+    total="$(jq '(.archived // []) | length' "$board")"
+    if [ "$total" -eq 0 ]; then
+      say "閉じた回覧はありません。" "No closed notices."
+      exit 0
+    fi
+    # Newest first: notices are appended as they close.
+    if [ "$lang" = ja ]; then
+      jq -r '(.archived // []) | reverse | .[0:10][] | "[\(.id)] \(.body)\n    出した人: \(.from)  確認印: \(if (.seen | length) == 0 then "なし" else (.seen | join(", ")) end)  閉じた日時: \(.closed_at // "-")"' "$board"
+    else
+      jq -r '(.archived // []) | reverse | .[0:10][] | "[\(.id)] \(.body)\n    posted by: \(.from)  seen by: \(if (.seen | length) == 0 then "no one" else (.seen | join(", ")) end)  closed: \(.closed_at // "-")"' "$board"
+    fi
+    if [ "$total" -gt 10 ]; then
+      say "(直近 10 件を表示。閉じた回覧は全部で ${total} 件)" "(Showing the latest 10 of ${total} closed notices.)"
+    fi
     ;;
   *)
     usage

@@ -3,7 +3,8 @@
 An [agmsg](https://github.com/fujibee/agmsg) plugin with one ext-tool, `kairan`
 (回覧板, a circular board). An ext-tool is a program that joins a team as a
 member; sending it a message runs it. A kairan member is the team's board: post
-a notice, see who has read it, and take it down when everyone has.
+a notice, see who has read it, take it down when everyone has, and look back at
+the closed ones.
 
 It needs agmsg 1.7.0 or newer, `git` and `jq`.
 
@@ -42,10 +43,11 @@ your inbox in the language you used.
 | `回覧 <本文>` | `post <text>` | puts up a notice and replies with its number |
 | `一覧` | `list` | open notices, who posted each, and who has seen it |
 | `見た <番号>` | `seen <n>` | stamps notice `<n>` as seen by you |
-| `おわり <番号>` | `close <n>` | takes notice `<n>` down; only whoever posted it can |
+| `おわり <番号>` | `close <n>` | takes notice `<n>` down and archives it with its stamps; only whoever posted it can |
+| `過去` | `archive` | closed notices, newest first (the latest 10, and how many there are in all) |
 
-Anything else gets the usage line back. The board is one file next to the
-member's config (`<skill>/ext-tools/<team>/kairan.kairan.json`); it never
+Anything else gets the usage line back. Notice numbers are never reused. The
+board is one file next to the member's config (`<skill>/ext-tools/<team>/kairan.kairan.json`); it never
 touches the message database.
 
 ## Remove
