@@ -1,5 +1,16 @@
 # agmsg-plugin-kairan
 
+## What is a kairan?
+
+A *kairanban* (回覧板, "circulating board") is how neighborhood associations in
+Japan pass news around: a notice is clipped to a board that goes from house to
+house, and each household stamps it with its seal (*hanko*) before handing it on.
+Whoever sent it round can see at a glance who has read it. This plugin does the
+same for a team: post a notice, everyone stamps it as seen, and you know who has
+read it.
+
+## About this plugin
+
 An [agmsg](https://github.com/fujibee/agmsg) plugin with one ext-tool, `kairan`
 (回覧板, a circular board). An ext-tool is a program that joins a team as a
 member; sending it a message runs it. A kairan member is the team's board: post

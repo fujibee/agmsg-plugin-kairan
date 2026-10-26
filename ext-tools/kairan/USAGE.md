@@ -1,6 +1,8 @@
 # kairan (回覧板)
 
-A kairan member is the team's circular board. Send it a command; it replies.
+In Japan a *kairanban* is a notice board passed from house to house, where each
+reader stamps it before handing it on; a kairan member does that for the team.
+Send it a command; it replies.
 Each command has a Japanese word and an English alias, and the reply comes in
 the language of the word you used.
 
