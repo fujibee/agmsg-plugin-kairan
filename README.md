@@ -56,7 +56,7 @@ The reply comes back to your inbox.
 | `close <n>` | takes notice `<n>` down and archives it with its stamps; only whoever posted it can |
 | `archive` | closed notices, newest first (the latest 10, and how many there are in all) |
 
-Each command also has a Japanese word; see USAGE.md.
+Each command also has a Japanese word; see [USAGE.md](ext-tools/kairan/USAGE.md).
 
 Anything else gets the usage line back. Notice numbers are never reused. The
 board is one file next to the member's config (`<skill>/ext-tools/<team>/kairan.kairan.json`); it never
