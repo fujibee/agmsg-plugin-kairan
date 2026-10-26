@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# handle: runs once per message sent to a kairan member. agmsg passes the
+# message as one JSON object on stdin; what is printed here is the reply.
+#
+#   回覧 <text>  | post <text>   put up a notice; replies with its number
+#   一覧         | list          open notices and who has seen each
+#   見た <n>     | seen <n>      stamp notice <n> as seen by the sender
+#   おわり <n>   | close <n>     take notice <n> down (only whoever posted it)
+#
+# Replies are in Japanese for the Japanese words and in English for the
+# English ones. Notices live in one JSON file next to the member's config
+# (<config>.kairan.json), so each member in each team has its own board.
+
+command -v jq >/dev/null 2>&1 || { echo "jq is not installed" >&2; exit 1; }
+
+msg="$(cat)"
+from="$(printf '%s' "$msg" | jq -r '.from // ""')"
+body="$(printf '%s' "$msg" | jq -r '.body // ""')"
+config_path="$(printf '%s' "$msg" | jq -r '.config_path // ""')"
+[ -n "$from" ] || { echo "message has no sender" >&2; exit 1; }
+[ -n "$config_path" ] || { echo "message has no config_path" >&2; exit 1; }
+
+board="${config_path%.conf}.kairan.json"
+lock="$board.lock"
+
+# Messages are handled in parallel, so changes to the board are serialized
+# with a lock directory. A lock older than a minute is left over from a
+# crashed run and is taken over.
+take_lock() {
+  local i
+  for i in $(seq 1 50); do
+    mkdir "$lock" 2>/dev/null && return 0
+    if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+      rmdir "$lock" 2>/dev/null || true
+      continue
+    fi
+    sleep 0.1
+  done
+  echo "the board is busy; try again" >&2
+  exit 1
+}
+take_lock
+trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+
+[ -f "$board" ] || printf '{"next":1,"items":[]}\n' > "$board"
+
+save() {  # <new json>
+  local tmp
+  tmp="$(mktemp "$board.XXXXXX")"
+  printf '%s\n' "$1" > "$tmp"
+  mv "$tmp" "$board"
+}
+
+# First word is the command; the rest is its argument. A full-width space
+# counts as a space; leading and trailing whitespace is dropped.
+body="${body//　/ }"
+trimmed="$(printf '%s' "$body" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+cmd="${trimmed%%[[:space:]]*}"
+arg="$(printf '%s' "${trimmed#"$cmd"}" | sed -e 's/^[[:space:]]*//')"
+lc_cmd="$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')"
+
+case "$lc_cmd" in
+  回覧|一覧|見た|おわり) lang=ja ;;
+  *) lang=en ;;
+esac
+
+say() {  # <ja> <en>
+  if [ "$lang" = ja ]; then printf '%s\n' "$1"; else printf '%s\n' "$2"; fi
+}
+
+usage() {
+  say "使い方: 「回覧 <本文>」で回覧を出す / 「一覧」で出ている回覧 / 「見た <番号>」で確認印 / 「おわり <番号>」で自分の回覧を閉じる" \
+      "Usage: \"post <text>\" puts up a notice / \"list\" shows open notices / \"seen <n>\" stamps one as seen / \"close <n>\" takes down your own"
+}
+
+# A notice number, or a usage reply.
+want_number() {
+  case "$arg" in
+    ''|*[!0-9]*) say "番号を付けてください(例: ${cmd} 3)" "Give a notice number (for example: ${cmd} 3)"; exit 0 ;;
+  esac
+}
+
+case "$lc_cmd" in
+  回覧|post)
+    if [ -z "$arg" ]; then
+      say "本文を付けてください(例: 回覧 金曜はリリース作業です)" "Give the notice text (for example: post Release work on Friday)"
+      exit 0
+    fi
+    now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    new="$(jq --arg f "$from" --arg b "$arg" --arg t "$now" \
+      '.items += [{id: .next, from: $f, body: $b, at: $t, seen: []}] | .next += 1' "$board")"
+    save "$new"
+    n="$(printf '%s' "$new" | jq '.next - 1')"
+    say "回覧 ${n} を出しました。見た人は「見た ${n}」と送ってください。" \
+        "Posted notice ${n}. Readers reply \"seen ${n}\"."
+    ;;
+  一覧|list)
+    if [ "$(jq '.items | length' "$board")" -eq 0 ]; then
+      say "出ている回覧はありません。" "No open notices."
+      exit 0
+    fi
+    if [ "$lang" = ja ]; then
+      jq -r '.items[] | "[\(.id)] \(.body)\n    出した人: \(.from)  確認印: \(if (.seen | length) == 0 then "まだなし" else (.seen | join(", ")) end)"' "$board"
+    else
+      jq -r '.items[] | "[\(.id)] \(.body)\n    posted by: \(.from)  seen by: \(if (.seen | length) == 0 then "no one yet" else (.seen | join(", ")) end)"' "$board"
+    fi
+    ;;
+  見た|seen)
+    want_number
+    if [ "$(jq --argjson n "$arg" '[.items[] | select(.id == $n)] | length' "$board")" -eq 0 ]; then
+      say "回覧 ${arg} は出ていません。" "There is no open notice ${arg}."
+      exit 0
+    fi
+    save "$(jq --argjson n "$arg" --arg f "$from" \
+      '.items |= map(if .id == $n and ((.seen | index($f)) == null) then .seen += [$f] else . end)' "$board")"
+    say "回覧 ${arg} に ${from} の確認印を押しました。" "Stamped notice ${arg} as seen by ${from}."
+    ;;
+  おわり|close)
+    want_number
+    owner="$(jq -r --argjson n "$arg" '.items[] | select(.id == $n) | .from' "$board")"
+    if [ -z "$owner" ]; then
+      say "回覧 ${arg} は出ていません。" "There is no open notice ${arg}."
+      exit 0
+    fi
+    if [ "$owner" != "$from" ]; then
+      say "回覧 ${arg} を閉じられるのは出した ${owner} だけです。" "Only ${owner}, who posted notice ${arg}, can close it."
+      exit 0
+    fi
+    seen="$(jq -r --argjson n "$arg" '.items[] | select(.id == $n) | if (.seen | length) == 0 then "" else (.seen | join(", ")) end' "$board")"
+    save "$(jq --argjson n "$arg" '.items |= map(select(.id != $n))' "$board")"
+    say "回覧 ${arg} を閉じました。確認印: ${seen:-なし}" "Closed notice ${arg}. Seen by: ${seen:-no one}"
+    ;;
+  *)
+    usage
+    ;;
+esac

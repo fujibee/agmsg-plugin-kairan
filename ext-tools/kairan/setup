@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# setup: non-interactive setup commands, called through
+# `scripts/ext-tool.sh setup <team> <name> kairan <command>`.
+# kairan has no settings and no secrets; `save` only writes the member config
+# that join requires. The board itself is created on the first message.
+#
+# Usage:
+#   setup status <config_path>
+#   setup save <config_path>
+#   setup test <config_path>
+
+die() { echo "setup: $*" >&2; exit 1; }
+
+cmd="${1:-}"
+[ -n "$cmd" ] || die "usage: setup status|save|test <config_path>"
+shift
+
+case "$cmd" in
+  status)
+    config_path="${1:?usage: setup status <config_path>}"
+    if [ -f "$config_path" ]; then
+      echo '{"missing":[],"configured":true}'
+    else
+      echo '{"missing":[],"configured":false}'
+    fi
+    ;;
+  save)
+    config_path="${1:?usage: setup save <config_path>}"
+    mkdir -p "$(dirname "$config_path")"
+    umask 077
+    printf 'tool=kairan\n' > "$config_path"
+    chmod 600 "$config_path"
+    printf '{"ok":true,"config_path":"%s"}\n' "$config_path"
+    ;;
+  test)
+    config_path="${1:?usage: setup test <config_path>}"
+    [ -f "$config_path" ] || die "not configured yet: run save first"
+    command -v jq >/dev/null 2>&1 || die "jq is not installed"
+    board="${config_path%.conf}.kairan.json"
+    if [ -f "$board" ]; then
+      printf '{"ok":true,"open_notices":%s}\n' "$(jq '.items | length' "$board")"
+    else
+      echo '{"ok":true,"open_notices":0}'
+    fi
+    ;;
+  check)
+    die "kairan has nothing to check"
+    ;;
+  *)
+    die "unknown command: $cmd (expected status, save, or test)"
+    ;;
+esac
