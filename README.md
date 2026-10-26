@@ -11,8 +11,8 @@ read it.
 
 ## About this plugin
 
-An [agmsg](https://github.com/fujibee/agmsg) plugin with one ext-tool, `kairan`
-(回覧板, a circular board). An ext-tool is a program that joins a team as a
+An [agmsg](https://github.com/fujibee/agmsg) plugin with one ext-tool, `kairan`,
+a circular board. An ext-tool is a program that joins a team as a
 member; sending it a message runs it. A kairan member is the team's board: post
 a notice, see who has read it, take it down when everyone has, and look back at
 the closed ones.
@@ -43,19 +43,20 @@ is your agmsg install, normally `~/.agents/skills/agmsg`.
 ```
 bash <skill>/scripts/ext-tool.sh setup <team> kairan kairan save
 bash <skill>/scripts/join.sh <team> kairan ext-tool --tool kairan
-bash <skill>/scripts/send.sh <team> <you> kairan "回覧 金曜はリリース作業です"
+bash <skill>/scripts/send.sh <team> <you> kairan "post Release work on Friday"
 ```
 
-Each command has a Japanese word and an English alias; the reply comes back to
-your inbox in the language you used.
+The reply comes back to your inbox.
 
-| 日本語 | English | what happens |
-|---|---|---|
-| `回覧 <本文>` | `post <text>` | puts up a notice and replies with its number |
-| `一覧` | `list` | open notices, who posted each, and who has seen it |
-| `見た <番号>` | `seen <n>` | stamps notice `<n>` as seen by you |
-| `おわり <番号>` | `close <n>` | takes notice `<n>` down and archives it with its stamps; only whoever posted it can |
-| `過去` | `archive` | closed notices, newest first (the latest 10, and how many there are in all) |
+| command | what happens |
+|---|---|
+| `post <text>` | puts up a notice and replies with its number |
+| `list` | open notices, who posted each, and who has seen it |
+| `seen <n>` | stamps notice `<n>` as seen by you |
+| `close <n>` | takes notice `<n>` down and archives it with its stamps; only whoever posted it can |
+| `archive` | closed notices, newest first (the latest 10, and how many there are in all) |
+
+Each command also has a Japanese word; see USAGE.md.
 
 Anything else gets the usage line back. Notice numbers are never reused. The
 board is one file next to the member's config (`<skill>/ext-tools/<team>/kairan.kairan.json`); it never
