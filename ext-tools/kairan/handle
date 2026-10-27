@@ -4,15 +4,21 @@ set -euo pipefail
 # handle: runs once per message sent to a kairan member. agmsg passes the
 # message as one JSON object on stdin; what is printed here is the reply.
 #
-#   回覧 <text>  | post <text>   put up a notice; replies with its number
-#   一覧         | list          open notices and who has seen each
-#   見た <n>     | seen <n>      stamp notice <n> as seen by the sender
-#   おわり <n>   | close <n>     take notice <n> down and archive it, with its
-#                                stamps (only whoever posted it)
-#   過去         | archive       closed notices, newest first (the latest 10)
+#   post <text>   put up a notice; replies with its number
+#   list          open notices and who has seen each
+#   seen <n>      stamp notice <n> as seen by the sender
+#   close <n>     take notice <n> down and archive it, with its stamps (only
+#                 whoever posted it)
+#   archive       closed notices, newest first (the latest 10)
 #
-# Replies are in Japanese for the Japanese words and in English for the
-# English ones. Notices live in one JSON file next to the member's config
+# Every reply and every command word lives in messages/<lang>, not here.
+# messages/en and messages/ja name their own words for the same five commands
+# (messages/ja has the Japanese ones), the reply comes from the file whose word
+# was used, and anything unknown gets the English usage line. To add a
+# language, copy messages/en to messages/<lang> and translate each value,
+# command words included; nothing in this file changes.
+#
+# Notices live in one JSON file next to the member's config
 # (<config>.kairan.json), so each member in each team has its own board:
 # {"next": <n>, "items": [open...], "archived": [closed...]}. A board written
 # before archiving existed has no "archived" key; it is read as empty. Numbers
@@ -58,39 +64,76 @@ save() {  # <new json>
   mv "$tmp" "$board"
 }
 
+messages="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/messages"
+
+# Values filled into a reply are inserted as they are; bash 5.2 would
+# otherwise read '&' in them as "the matched text".
+shopt -u patsub_replacement 2>/dev/null || true
+
+# lookup <file> <key>: the text after "<key>=" in a messages file.
+lookup() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "$2="*) printf '%s' "${line#*=}"; return 0 ;; esac
+  done < "$1"
+}
+
+# text <key> [<name> <value>]...: reply <key> in $lang, each {name} filled in.
+text() {
+  local s
+  s="$(lookup "$messages/$lang" "$1")"
+  shift
+  while [ $# -ge 2 ]; do
+    s="${s//\{$1\}/$2}"
+    shift 2
+  done
+  printf '%s' "$s"
+}
+
+say() { printf '%s\n' "$(text "$@")"; }
+
 # First word is the command; the rest is its argument. A full-width space
-# counts as a space; leading and trailing whitespace is dropped.
-body="${body//　/ }"
+# (U+3000, written as its UTF-8 bytes) counts as a space; leading and trailing
+# whitespace is dropped.
+body="${body//$(printf '\343\200\200')/ }"
 trimmed="$(printf '%s' "$body" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 cmd="${trimmed%%[[:space:]]*}"
 arg="$(printf '%s' "${trimmed#"$cmd"}" | sed -e 's/^[[:space:]]*//')"
 lc_cmd="$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')"
 
-case "$lc_cmd" in
-  回覧|一覧|見た|おわり|過去) lang=ja ;;
-  *) lang=en ;;
-esac
-
-say() {  # <ja> <en>
-  if [ "$lang" = ja ]; then printf '%s\n' "$1"; else printf '%s\n' "$2"; fi
-}
-
-usage() {
-  say "使い方: 「回覧 <本文>」で回覧を出す / 「一覧」で出ている回覧 / 「見た <番号>」で確認印 / 「おわり <番号>」で自分の回覧を閉じる / 「過去」で閉じた回覧" \
-      "Usage: \"post <text>\" puts up a notice / \"list\" shows open notices / \"seen <n>\" stamps one as seen / \"close <n>\" takes down your own / \"archive\" shows closed ones"
-}
+# The first messages file (en sorts first) whose word matches sets the reply
+# language and the command.
+lang=en
+op=""
+for file in "$messages"/*; do
+  for c in post list seen close archive; do
+    if [ "$lc_cmd" = "$(lookup "$file" "cmd.$c")" ]; then
+      lang="${file##*/}"
+      op="$c"
+      break 2
+    fi
+  done
+done
 
 # A notice number, or a usage reply.
 want_number() {
   case "$arg" in
-    ''|*[!0-9]*) say "番号を付けてください(例: ${cmd} 3)" "Give a notice number (for example: ${cmd} 3)"; exit 0 ;;
+    ''|*[!0-9]*) say need_number cmd "$cmd"; exit 0 ;;
   esac
 }
 
-case "$lc_cmd" in
-  回覧|post)
+# One notice per entry: its number and text, then who posted it and who has
+# seen it, plus when it closed for archived ones.
+show() {  # <jq path> <empty-seen key> [closed]
+  jq -r --arg by "$(text posted_by)" --arg sb "$(text seen_by)" \
+    --arg none "$(text "$2")" --arg cl "$(text closed_at)" --arg withclosed "${3:-}" \
+    "$1"' | "[\(.id)] \(.body)\n    \($by): \(.from)  \($sb): \(if (.seen | length) == 0 then $none else (.seen | join(", ")) end)\(if $withclosed == "" then "" else "  \($cl): \(.closed_at // "-")" end)"' "$board"
+}
+
+case "$op" in
+  post)
     if [ -z "$arg" ]; then
-      say "本文を付けてください(例: 回覧 金曜はリリース作業です)" "Give the notice text (for example: post Release work on Friday)"
+      say need_text
       exit 0
     fi
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -98,65 +141,55 @@ case "$lc_cmd" in
       '.items += [{id: .next, from: $f, body: $b, at: $t, seen: []}] | .next += 1' "$board")"
     save "$new"
     n="$(printf '%s' "$new" | jq '.next - 1')"
-    say "回覧 ${n} を出しました。見た人は「見た ${n}」と送ってください。" \
-        "Posted notice ${n}. Readers reply \"seen ${n}\"."
+    say posted n "$n"
     ;;
-  一覧|list)
+  list)
     if [ "$(jq '.items | length' "$board")" -eq 0 ]; then
-      say "出ている回覧はありません。" "No open notices."
+      say list_empty
       exit 0
     fi
-    if [ "$lang" = ja ]; then
-      jq -r '.items[] | "[\(.id)] \(.body)\n    出した人: \(.from)  確認印: \(if (.seen | length) == 0 then "まだなし" else (.seen | join(", ")) end)"' "$board"
-    else
-      jq -r '.items[] | "[\(.id)] \(.body)\n    posted by: \(.from)  seen by: \(if (.seen | length) == 0 then "no one yet" else (.seen | join(", ")) end)"' "$board"
-    fi
+    show '.items[]' nobody_yet
     ;;
-  見た|seen)
+  seen)
     want_number
     if [ "$(jq --argjson n "$arg" '[.items[] | select(.id == $n)] | length' "$board")" -eq 0 ]; then
-      say "回覧 ${arg} は出ていません。" "There is no open notice ${arg}."
+      say no_such n "$arg"
       exit 0
     fi
     save "$(jq --argjson n "$arg" --arg f "$from" \
       '.items |= map(if .id == $n and ((.seen | index($f)) == null) then .seen += [$f] else . end)' "$board")"
-    say "回覧 ${arg} に ${from} の確認印を押しました。" "Stamped notice ${arg} as seen by ${from}."
+    say stamped n "$arg" from "$from"
     ;;
-  おわり|close)
+  close)
     want_number
     owner="$(jq -r --argjson n "$arg" '.items[] | select(.id == $n) | .from' "$board")"
     if [ -z "$owner" ]; then
-      say "回覧 ${arg} は出ていません。" "There is no open notice ${arg}."
+      say no_such n "$arg"
       exit 0
     fi
     if [ "$owner" != "$from" ]; then
-      say "回覧 ${arg} を閉じられるのは出した ${owner} だけです。" "Only ${owner}, who posted notice ${arg}, can close it."
+      say not_owner n "$arg" owner "$owner"
       exit 0
     fi
     seen="$(jq -r --argjson n "$arg" '.items[] | select(.id == $n) | if (.seen | length) == 0 then "" else (.seen | join(", ")) end' "$board")"
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     save "$(jq --argjson n "$arg" --arg t "$now" \
       '.archived = ((.archived // []) + [.items[] | select(.id == $n) | .closed_at = $t]) | .items |= map(select(.id != $n))' "$board")"
-    say "回覧 ${arg} を閉じました(「過去」で見られます)。確認印: ${seen:-なし}" \
-        "Closed notice ${arg} (see it with \"archive\"). Seen by: ${seen:-no one}"
+    say closed n "$arg" seen "${seen:-$(text nobody)}"
     ;;
-  過去|archive)
+  archive)
     total="$(jq '(.archived // []) | length' "$board")"
     if [ "$total" -eq 0 ]; then
-      say "閉じた回覧はありません。" "No closed notices."
+      say archive_empty
       exit 0
     fi
     # Newest first: notices are appended as they close.
-    if [ "$lang" = ja ]; then
-      jq -r '(.archived // []) | reverse | .[0:10][] | "[\(.id)] \(.body)\n    出した人: \(.from)  確認印: \(if (.seen | length) == 0 then "なし" else (.seen | join(", ")) end)  閉じた日時: \(.closed_at // "-")"' "$board"
-    else
-      jq -r '(.archived // []) | reverse | .[0:10][] | "[\(.id)] \(.body)\n    posted by: \(.from)  seen by: \(if (.seen | length) == 0 then "no one" else (.seen | join(", ")) end)  closed: \(.closed_at // "-")"' "$board"
-    fi
+    show '(.archived // []) | reverse | .[0:10][]' nobody closed
     if [ "$total" -gt 10 ]; then
-      say "(直近 10 件を表示。閉じた回覧は全部で ${total} 件)" "(Showing the latest 10 of ${total} closed notices.)"
+      say archive_more total "$total"
     fi
     ;;
   *)
-    usage
+    say usage
     ;;
 esac

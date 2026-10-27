@@ -1,0 +1,23 @@
+# kairan replies in Japanese. Read by handle as key=text, never sourced.
+# cmd.* are the command words that pick this language; {name} is filled in.
+cmd.post=回覧
+cmd.list=一覧
+cmd.seen=見た
+cmd.close=おわり
+cmd.archive=過去
+usage=使い方: 「回覧 <本文>」で回覧を出す / 「一覧」で出ている回覧 / 「見た <番号>」で確認印 / 「おわり <番号>」で自分の回覧を閉じる / 「過去」で閉じた回覧
+need_number=番号を付けてください(例: {cmd} 3)
+need_text=本文を付けてください(例: 回覧 金曜はリリース作業です)
+posted=回覧 {n} を出しました。見た人は「見た {n}」と送ってください。
+list_empty=出ている回覧はありません。
+no_such=回覧 {n} は出ていません。
+stamped=回覧 {n} に {from} の確認印を押しました。
+not_owner=回覧 {n} を閉じられるのは出した {owner} だけです。
+closed=回覧 {n} を閉じました(「過去」で見られます)。確認印: {seen}
+archive_empty=閉じた回覧はありません。
+archive_more=(直近 10 件を表示。閉じた回覧は全部で {total} 件)
+posted_by=出した人
+seen_by=確認印
+closed_at=閉じた日時
+nobody_yet=まだなし
+nobody=なし

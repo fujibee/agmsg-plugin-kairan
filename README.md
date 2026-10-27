@@ -56,7 +56,8 @@ The reply comes back to your inbox.
 | `close <n>` | takes notice `<n>` down and archives it with its stamps; only whoever posted it can |
 | `archive` | closed notices, newest first (the latest 10, and how many there are in all) |
 
-Each command also has a Japanese word; see [USAGE.md](ext-tools/kairan/USAGE.md).
+Each command also has a Japanese word, and the reply follows the word's
+language; see [USAGE.ja.md](ext-tools/kairan/USAGE.ja.md).
 
 Anything else gets the usage line back. Notice numbers are never reused. The
 board is one file next to the member's config (`<skill>/ext-tools/<team>/kairan.kairan.json`); it never
@@ -79,9 +80,13 @@ agmsg-plugin.conf          # name, description, min_core
 ext-tools/kairan/
 ├── tool.conf              # manifest (read as data, never run)
 ├── handle                 # parses the command, updates the board, replies
+├── messages/              # command words and replies, one file per language
+│   ├── en
+│   └── ja
 ├── setup                  # status | save | test
 ├── SETUP.md               # setup steps, for an agent setting it up
-└── USAGE.md               # commands, in English and Japanese
+├── USAGE.md               # commands, in English
+└── USAGE.ja.md            # commands, in Japanese
 ```
 
 The ext-tool contract (`handle`'s stdin JSON, exit codes, timeouts) and how

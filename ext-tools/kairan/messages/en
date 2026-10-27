@@ -1,0 +1,23 @@
+# kairan replies in English. Read by handle as key=text, never sourced.
+# cmd.* are the command words that pick this language; {name} is filled in.
+cmd.post=post
+cmd.list=list
+cmd.seen=seen
+cmd.close=close
+cmd.archive=archive
+usage=Usage: "post <text>" puts up a notice / "list" shows open notices / "seen <n>" stamps one as seen / "close <n>" takes down your own / "archive" shows closed ones
+need_number=Give a notice number (for example: {cmd} 3)
+need_text=Give the notice text (for example: post Release work on Friday)
+posted=Posted notice {n}. Readers reply "seen {n}".
+list_empty=No open notices.
+no_such=There is no open notice {n}.
+stamped=Stamped notice {n} as seen by {from}.
+not_owner=Only {owner}, who posted notice {n}, can close it.
+closed=Closed notice {n} (see it with "archive"). Seen by: {seen}
+archive_empty=No closed notices.
+archive_more=(Showing the latest 10 of {total} closed notices.)
+posted_by=posted by
+seen_by=seen by
+closed_at=closed
+nobody_yet=no one yet
+nobody=no one
